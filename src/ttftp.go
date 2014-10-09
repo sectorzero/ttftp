@@ -4,9 +4,10 @@ import(
     "fmt"
     "net"
     "os"
-    "time"
+//    "time"
     "bytes"
     "encoding/binary"
+    "log"
 )
 
 // ---------------------------------
@@ -19,54 +20,12 @@ func check_error(err error) {
     }
 }
 
-// ---------------------------------
-// Communication
-// ---------------------------------
-func send_message() {
-    dstaddr, err := net.ResolveUDPAddr("udp", "localhost:9991")
-    check_error(err)
-
-    dstconn, err := net.DialUDP("udp", nil, dstaddr)
-    check_error(err)
-
-    // msg := "<HOLA>:<" + time.Now().String() + ">"
-    // fmt.Println(00, msg)
-    // n, err := dstconn.Write([]byte(msg)) 
-
-    msg := new(Message)
-    msg.opcode = 3
-    msg.block = 213
-    payload :=  "asdfaksdjflkasjdfjaslkdfjlaksdaadsfa"
-    copy(msg.payload[:], payload)
-    msg.sz = len(payload)
-    encoded := Encode(msg)
-    // fmt.Println(encoded.Bytes())
-    n, err := dstconn.Write(encoded.Bytes()) 
-    check_error(err)
-    fmt.Fprintf(os.Stdout, "[CLIENT] <send> : data=%s, bytes=%d, dst=%s\n", msg, n, dstaddr.String());
-    
-    msg = new(Message)
-    msg.opcode = 2
-    msg.key = "key-1"
-    encoded = Encode(msg)
-    n, err = dstconn.Write(encoded.Bytes()) 
-    check_error(err)
-    fmt.Fprintf(os.Stdout, "[CLIENT] <send> : data=%s, bytes=%d, dst=%s\n", msg, n, dstaddr.String());
-
-    msg = new(Message)
-    msg.opcode = 1
-    msg.key = "key-1"
-    encoded = Encode(msg)
-    n, err = dstconn.Write(encoded.Bytes()) 
-    check_error(err)
-    fmt.Fprintf(os.Stdout, "[CLIENT] <send> : data=%s, bytes=%d, dst=%s\n", msg, n, dstaddr.String());
-}
-
-func read_message() {
+func trace(format string, v ...interface{}) {
+    log.Printf(format, v...)
 }
 
 // ---------------------------------
-// Protocol Data Encoding/Decoding
+// TFTP Protocol Encoding/Decoding
 // ---------------------------------
 type Message struct {
     opcode uint16
@@ -77,6 +36,23 @@ type Message struct {
     errmsg string
     sz int
 }
+
+// func (m Message) String() (string) {
+//     s := "{ "
+//     s += "<" + m.opcode + ">"
+//     if m.opcode == 1 {
+//         s += " " + m.key
+//     } else if m.opcode == 2 {
+//         s += " " + m.key
+//     } else if m.opcode == 3 {
+//         s += " " + m.block
+//         s += " " + m.sz
+//         s += " " + m.payload
+//     } else if m.opcode == 4 {
+//         s += " " + m.block
+//     } else {
+//     }
+// }
     
 func Decode(buf *bytes.Buffer) (m *Message) {
     m = new(Message)
@@ -95,8 +71,7 @@ func Decode(buf *bytes.Buffer) (m *Message) {
         sz, _ := buf.Read(m.payload[0:512])
         m.sz = sz
     } else if opcode == 4 {
-        errmsg, _ := buf.ReadString(byte(0));
-        m.errmsg = errmsg
+        binary.Read(buf, binary.BigEndian, &m.block);
     } else if opcode == 5 {
         errmsg, _ := buf.ReadString(byte(0));
         m.errmsg = errmsg
@@ -118,11 +93,10 @@ func Encode(m *Message) (buf *bytes.Buffer) {
     } else if opcode == 2 {
         buf.Write([]byte(m.key))
     } else if opcode == 3 {
-        fmt.Println("HOLA")
         binary.Write(buf, binary.BigEndian, uint16(m.block))
         buf.Write([]byte(m.payload[0:m.sz]))
     } else if opcode == 4 {
-        buf.Write([]byte("NODATA"))
+        binary.Write(buf, binary.BigEndian, uint16(m.block))
     } else if opcode == 5 {
         buf.Write([]byte("NODATA"))
     } else {
@@ -133,8 +107,7 @@ func Encode(m *Message) (buf *bytes.Buffer) {
 }
 
 func CodecTest() {
-
-    // testing
+    // encode
     msg := new(Message)
     msg.opcode = 3
     msg.block = 213
@@ -144,7 +117,7 @@ func CodecTest() {
     encoded := Encode(msg)
     fmt.Println(encoded.Bytes())
 
-    // testing
+    // decode
     decoded := Decode(encoded)
     fmt.Println(decoded)
 }
@@ -153,39 +126,42 @@ func CodecTest() {
 // TFTP Control Service
 // ---------------------------------
 func main() {
+    // Control Server UDP Socket
     serveraddr, err := net.ResolveUDPAddr("udp", ":9991")
     check_error(err)
-
     serverconn, err := net.ListenUDP("udp", serveraddr)
     check_error(err)
 
+    // TESTING MESSAGES
     // go routine to create and send a message to this server
-    go send_message()
+    // go send_message()
+    go test_wrq_client()
 
+    // Control Loop
     for {
-        // wait and read the message
+        // == recvmsg ==
         var buffer [1500]byte;
         n, clientaddr, err := serverconn.ReadFromUDP(buffer[0:])
         check_error(err)
+        trace("[%s] <read> : data=%s, bytes=%d, src=%s\n", string(buffer[0:n]), "SERVER", n, clientaddr.String())
 
-        fmt.Fprintf(os.Stdout, "[SERVER] <read> : data=%s, bytes=%d, src=%s\n", string(buffer[0:n]), n, clientaddr.String())
+        // decode the message
         datain := Decode(bytes.NewBuffer(buffer[0:n]))
-        fmt.Fprintf(os.Stdout, "[SERVER] <message-in>:[ %d %s %d %d %s ]\n", datain.opcode, datain.key, datain.block, datain.sz, datain.payload)
+        trace("[%s] <message-in>:[ %+v ]\n", "SERVER", datain)
 
+        // orchestrate
         if datain.opcode == 1 {
             go wrq_session(datain, clientaddr)
         } else if datain.opcode == 2 {
             go rrq_session(datain, clientaddr)
         } else {
-            fmt.Fprintf(os.Stdout, "[%s] %s\n", "SERVER", "Invalid Request For Control Loop")
+            trace("[%s] %s\n", "SERVER", "Invalid Request For Control Loop")
         }
     }
-
-    time.Sleep(time.Second * 30);
 }
 
 // ---------------------------------
-// WRQ Service
+// WRQ Session Handler
 // ---------------------------------
 type FileTransferStateIn struct {
     buf bytes.Buffer
@@ -193,25 +169,144 @@ type FileTransferStateIn struct {
 }
 
 func wrq_session(m *Message, clientaddr *net.UDPAddr) {
-    fmt.Fprintf(os.Stdout, "[%s] %d %s %s\n", "WRQ Handler", m.opcode, m.key, clientaddr.String())
+    trace("[%s] src=%s message=%+v\n", "WRQ Handler", clientaddr.String(), m)
 
-    // generate a tid
-    // bind a new udp socket ( ListenUDP ) this is our new connection
-    // send the initial packet for WRQ transfer initiate
+    // bind a new udp socket ( ListenUDP ) this is our new 'endpoint' for the session
+    //var tid uint16
+    //tid = 9999
+    sessionaddr, err := net.ResolveUDPAddr("udp", ":9999")
+    check_error(err)
+    sessionconn, err := net.ListenUDP("udp", sessionaddr)
+    check_error(err)
 
-    // while more data to be received
-    //  recvfrom - wait
-    //  read the data and encode
-    //  validate and respond
-    //  append data to buf chain
-    //  if full message recvd, update in file storage and done
+    // send the initial ACK for WRQ transfer initiate
+    first_ack := new(Message)
+    first_ack.opcode = 4
+    first_ack.block = 0
+    encoded_first_ack := Encode(first_ack)
+    n, err := sessionconn.WriteToUDP(encoded_first_ack.Bytes(), clientaddr) 
+    check_error(err)
+    trace("[%s] <send> : data=%s, bytes=%d, src=%s, dst=%s\n", "WRQ", first_ack, n, sessionaddr.String(), clientaddr.String());
+
+    transfer_state := new(FileTransferStateIn)
+    for {
+        trace("%s\n", "Waiting on WRQ session loop")
+        // while more data to be received
+
+        // == recvmsg ==
+        var buffer [1500]byte;
+        received_bytes, clientaddr, err := sessionconn.ReadFromUDP(buffer[0:])
+        check_error(err)
+        trace("[%s] <read> : data=%s, bytes=%d, src=%s\n", "WRQ", string(buffer[0:n]), received_bytes, clientaddr.String())
+
+        // [TODO] validate clientaddr to ensure no cross-talk among sessions ( ignoring now for simplicity )
+
+        // decode the packet
+        datain := Decode(bytes.NewBuffer(buffer[0:n]))
+        trace("[%s] <message-in>:[ %d %d %d %s ]\n", "WRQ", datain.opcode, datain.block, datain.sz, datain.payload)
+
+        // collect the data
+        if datain.opcode == 3 {
+            trace("%s\n", "GOT DATA!!")
+
+            if datain.block != transfer_state.last_block_received + 1 {
+                trace("Block Sequence Error, Actual=%d, Expected=%d", datain.block, transfer_state.last_block_received + 1)
+
+                // send ack
+                er := new(Message)
+                er.opcode = 5
+                er.errmsg = "Invalid Block Sequence"
+                encoded_er := Encode(er)
+                n, err := sessionconn.WriteToUDP(encoded_ack.Bytes(), clientaddr) 
+                check_error(err)
+                trace("[%s] <send> : data=%s, bytes=%d, src=%s, dst=%s\n", "WRQ", er, n, sessionaddr.String(), clientaddr.String());
+
+                trace("Terminating WRQ Session")
+                break;
+            }
+
+            transfer_state.buf.Write(datain.payload[:])
+            transfer_state.last_block_received = datain.block
+
+            // send ack
+            ack := new(Message)
+            ack.opcode = 4
+            ack.block = datain.block
+            encoded_ack := Encode(ack)
+            n, err := sessionconn.WriteToUDP(encoded_ack.Bytes(), clientaddr) 
+            check_error(err)
+            trace("[%s] <send> : data=%s, bytes=%d, src=%s, dst=%s\n", "WRQ", ack, n, sessionaddr.String(), clientaddr.String());
+
+            // [TODO] If EOF, complete the file storage transaction
+            if false {
+                // store the file
+
+                trace("Complete File Put Transaction")
+                break
+            }
+
+        } else {
+            trace("[%s] %s\n", "WRQ", "Invalid Request For Control Loop")
+        }
+    }
+}
+
+func test_wrq_client() {
+    // Setup a UDP socket on which we can listen for events
+    session_src_addr, err := net.ResolveUDPAddr("udp", "localhost:0")
+    check_error(err)
+    session_src_conn, err := net.ListenUDP("udp", session_src_addr)
+    check_error(err)
+
+    // send a wrq message
+    msg := new(Message)
+    msg.opcode = 1
+    msg.key = "key-1"
+    encoded := Encode(msg)
+    server_control_addr, err := net.ResolveUDPAddr("udp", "localhost:9991")
+    check_error(err)
+    n, err := session_src_conn.WriteToUDP(encoded.Bytes(), server_control_addr) 
+    check_error(err)
+    trace("[CLIENT] <send> : data=%s, bytes=%d, src=%s, dst=%s\n", msg, n, session_src_addr.String(), server_control_addr.String());
+
+    // wait for ack
+    for {
+        // wait and read the message
+        var buffer [1500]byte;
+        n, session_dst_addr, err := session_src_conn.ReadFromUDP(buffer[0:])
+        check_error(err)
+
+        trace("[CLIENT] <read> : data=%s, bytes=%d, src=%s, dst=%s\n", string(buffer[0:n]), n, session_src_addr.String(), session_dst_addr.String())
+        datain := Decode(bytes.NewBuffer(buffer[0:n]))
+        trace("[CLIENT] <message-in>:[ %+v ]\n", datain)
+
+        if datain.opcode == 4 {
+            trace("%s\n", "[CLIENT] received ACK, Sending DATA")
+
+            dataout := new(Message)
+            dataout.opcode = 3
+            dataout.block = datain.block + 1
+            payload := "holamiamigo"
+            copy(dataout.payload[:], payload)
+            dataout.sz = len(payload)
+            encoded_dataout := Encode(dataout)
+        
+            n, err := session_src_conn.WriteToUDP(encoded_dataout.Bytes(), session_dst_addr) 
+            check_error(err)
+            trace("[CLIENT] <send> : data=%s, bytes=%d, src=%s, dst=%s\n", msg, n, session_src_addr.String(), session_dst_addr.String());
+        } else {
+            trace("[%s] %s\n", "CLIENT", "Invalid Request For Control Loop")
+        }
+    }
+
+    // send a data message
 }
 
 // ---------------------------------
-// RRQ Service
+// RRQ Session Handler
 // ---------------------------------
 func rrq_session(m *Message, clientaddr *net.UDPAddr) {
-    fmt.Fprintf(os.Stdout, "[%s] %d %s %s\n", "RRQ Handler", m.opcode, m.key, clientaddr.String())
+    trace("[%s] %d %s %s\n", "RRQ Handler", m.opcode, m.key, clientaddr.String())
 
     // generate a tid
     // bind a new udp socket ( ListenUDP ) this is our new connection
@@ -237,6 +332,51 @@ func read_file() {
 func write_file() {
 }
 
+// ---------------------------------
+// Test Stuff
+// ---------------------------------
+func send_message() {
+    dstaddr, err := net.ResolveUDPAddr("udp", "localhost:9991")
+    check_error(err)
+
+    dstconn, err := net.DialUDP("udp", nil, dstaddr)
+    check_error(err)
+
+    // msg := "<HOLA>:<" + time.Now().String() + ">"
+    // fmt.Println(00, msg)
+    // n, err := dstconn.Write([]byte(msg)) 
+
+    msg := new(Message)
+    msg.opcode = 3
+    msg.block = 213
+    payload :=  "asdfaksdjflkasjdfjaslkdfjlaksdaadsfa"
+    copy(msg.payload[:], payload)
+    msg.sz = len(payload)
+    encoded := Encode(msg)
+    // fmt.Println(encoded.Bytes())
+    n, err := dstconn.Write(encoded.Bytes()) 
+    check_error(err)
+    trace("[CLIENT] <send> : data=%s, bytes=%d, dst=%s\n", msg, n, dstaddr.String());
+    
+    msg = new(Message)
+    msg.opcode = 2
+    msg.key = "key-1"
+    encoded = Encode(msg)
+    n, err = dstconn.Write(encoded.Bytes()) 
+    check_error(err)
+    trace("[CLIENT] <send> : data=%s, bytes=%d, dst=%s\n", msg, n, dstaddr.String());
+
+    msg = new(Message)
+    msg.opcode = 1
+    msg.key = "key-1"
+    encoded = Encode(msg)
+    n, err = dstconn.Write(encoded.Bytes()) 
+    check_error(err)
+    trace("[CLIENT] <send> : data=%s, bytes=%d, dst=%s\n", msg, n, dstaddr.String());
+}
+
+func read_message() {
+}
 // ---------------------------------
 // Working/Learning Notes : 
 // ---------------------------------
