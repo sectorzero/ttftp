@@ -196,9 +196,18 @@ func main() {
     chk_err(err)
 
     // < TESTING MESSAGES >
-    // go routine to create and send a message to this server
-    go write_file("hola", 513)
-    go read_file("hola")
+
+    // go write_file("key_511", 511)
+    // go write_file("key_512", 512)
+    // go write_file("key_513", 513)
+
+    // go read_file("hola")
+
+    go test_rw("key_511", 511)
+    go test_rw("key_512", 512)
+    go test_rw("key_513", 513)
+
+    // < TESTING MESSAGES >
 
     // Control Loop
     for {
@@ -221,6 +230,13 @@ func main() {
             trace("[SERVER] %s\n", "Invalid Request For Control Loop")
         }
     }
+}
+
+func test_rw(key string, payload_sz int) {
+    write_file(key, payload_sz)
+    read_file(key)
+    read_file(key)
+    read_file(key)
 }
 
 // ---------------------------------
@@ -253,6 +269,7 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
     // 3. Read DATA Blocks
     transfer_state := new(FileTransferStateIn)
     completed := false
+    datain_bytes := 0
     for {
         trace("[WRQ] %s\n", "Waiting on WRQ session loop")
 
@@ -291,6 +308,7 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
             // append/store data in temp buffer
             transfer_state.buf.Write(datain.payload[:])
             transfer_state.last_block_received = datain.block
+            datain_bytes += datain.sz
 
             // send ack
             ack := new(Message)
@@ -312,11 +330,14 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
     }
 
     if completed == true {
-        // store the file
         trace("[WRQ] data receieved fully, storing file Key=%s\n", m.key)
-        // complete file PUT transaction
+
+        // store the file
+        trace("[WRQ] Received : [ %d ] %s\n", datain_bytes, base64.URLEncoding.EncodeToString(transfer_state.buf.Bytes()[0:datain_bytes]))
+        put(m.key, transfer_state.buf.Bytes()[0:datain_bytes])
+
         trace("[WRQ] COMPLETED, File=%s\n", m.key)
-        // last ack can signify error if unable to store
+        // [TODO] last ack can signify error if unable to store ( ignoring for now )
     }
 }
 
@@ -334,9 +355,18 @@ func rrq_session(m *Message, clientaddr *net.UDPAddr) {
     chk_err(err)
 
     // validate if file is present else respond with error
-    payload_sz := chunk_sz
-    payload := generate_random_bytes(payload_sz)
-    key := "key-1"
+    // payload_sz := chunk_sz
+    // payload := generate_random_bytes(payload_sz)
+    // key := "key-1"
+    key := m.key
+    file, ok := get(key)
+    // if not ok, then send an err packet and abort
+    if ok == false {
+        trace("[RRQ] File not present, abort\n")
+        return
+    }
+    payload := file.buf
+    payload_sz := file.sz
 
     // send data
     completed := false
@@ -418,6 +448,7 @@ func rrq_session(m *Message, clientaddr *net.UDPAddr) {
 // ---------------------------------
 type File struct {
     buf []byte
+    sz int
 }
 
 var filestore = struct {
@@ -429,10 +460,13 @@ func create_file(payload []byte) (file *File) {
     f := new(File)
     f.buf = make([]byte, len(payload))
     copy(f.buf, payload)
+    f.sz = len(payload)
     return f
 }
 
 func put(key string, payload []byte) (bool) {
+    trace("[FILESTORE] Request to PUT file, Key=%s, Size=%d\n", key, len(payload))
+
     file := create_file(payload)
 
     filestore.Lock()
@@ -443,6 +477,8 @@ func put(key string, payload []byte) (bool) {
 }
 
 func get(key string) (file *File, exists bool) {
+    trace("[FILESTORE] Request to GET file, Key=%s\n", key)
+
     filestore.RLock()
     defer filestore.RUnlock()
 
