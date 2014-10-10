@@ -1,12 +1,12 @@
 package main
 
 // TODO 
-// - random tid choosing
 // - File storage
 // - Fix for sending last ack upon storing file
 // - Endianess 
 
 import(
+    "math/big"
     "bytes"
     "crypto/rand"
     "encoding/base64"
@@ -36,6 +36,16 @@ func chk_err(err error) {
 
 func trace(format string, v ...interface{}) {
     log.Printf(format, v...)
+}
+
+func get_random_tid() (tid_port string) {
+    buf := new(bytes.Buffer)
+    buf.WriteString(":")
+    max := big.NewInt(5000);
+    portrange, _ := rand.Int(rand.Reader, max)
+    port := int(portrange.Uint64()) + 10000
+    buf.WriteString(strconv.Itoa(port))
+    return buf.String()
 }
 
 // ---------------------------------
@@ -178,7 +188,7 @@ func testCodec() {
 // ---------------------------------
 func main() {
     // Control Server UDP Socket
-    serveraddr, err := net.ResolveUDPAddr("udp", ":9991")
+    serveraddr, err := net.ResolveUDPAddr("udp", control_port)
     chk_err(err)
     serverconn, err := net.ListenUDP("udp", serveraddr)
     chk_err(err)
@@ -186,7 +196,7 @@ func main() {
     // < TESTING MESSAGES >
     // go routine to create and send a message to this server
     go write_file("hola", 513)
-    // go read_file("hola")
+    go read_file("hola")
 
     // Control Loop
     for {
@@ -223,10 +233,8 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
     trace("[WRQ-HANDLER] src=%s message-in=%s\n", clientaddr.String(), m.String())
 
     // 1. bind a new udp socket ( ListenUDP ) this is our new 'endpoint' for the session
-    // [TODO]
-    //var tid uint16
-    //tid = 9999
-    sessionaddr, err := net.ResolveUDPAddr("udp", ":9999")
+    tid := get_random_tid()
+    sessionaddr, err := net.ResolveUDPAddr("udp", tid)
     chk_err(err)
     sessionconn, err := net.ListenUDP("udp", sessionaddr)
     chk_err(err)
@@ -316,12 +324,9 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
 func rrq_session(m *Message, clientaddr *net.UDPAddr) {
     trace("[RRQ-HANDLER] src=%s message-in=%s\n", clientaddr.String(), m.String())
 
-    // bind a new udp socket ( ListenUDP ) this is our new connection
     // 1. bind a new udp socket ( ListenUDP ) this is our new 'endpoint' for the session
-    // [TODO]
-    //var tid uint16
-    //tid = 8888
-    sessionaddr, err := net.ResolveUDPAddr("udp", ":8888")
+    tid := get_random_tid()
+    sessionaddr, err := net.ResolveUDPAddr("udp", tid)
     chk_err(err)
     sessionconn, err := net.ListenUDP("udp", sessionaddr)
     chk_err(err)
