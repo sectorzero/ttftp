@@ -6,7 +6,6 @@ package main
 // - Endianess 
 
 import(
-    "math/big"
     "bytes"
     "crypto/rand"
     "encoding/base64"
@@ -14,14 +13,17 @@ import(
     "fmt"
     "io"
     "log"
+    "math/big"
     "net"
     "os"
     "strconv"
+    "sync"
 )
 
 const(
-    control_port string = ":9991"
+    control_port string = "localhost:9991"
     chunk_sz int = 512
+    tftp_data_header_bytes int = 4
 )
 
 // ---------------------------------
@@ -54,7 +56,7 @@ func get_random_tid() (tid_port string) {
 type Message struct {
     opcode uint16
     key string
-    payload [512]byte
+    payload [chunk_sz]byte
     block uint16
     errcode uint16
     errmsg string
@@ -117,7 +119,7 @@ func Decode(buf *bytes.Buffer) (m *Message) {
     } else if opcode == 3 {
         err := binary.Read(buf, binary.BigEndian, &m.block);
         chk_err(err)
-        sz, err := buf.Read(m.payload[0:512])
+        sz, err := buf.Read(m.payload[0:chunk_sz])
         if err != nil && err == io.EOF {
             m.sz = 0
         } else {
@@ -300,7 +302,7 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
             trace("[%s] <send> : message-out=%s, bytes=%d, src=%s, dst=%s\n", "WRQ", ack.String(), n, sessionaddr.String(), clientaddr.String());
 
             // If EOF, complete the file storage transaction
-            if received_bytes < 516 {
+            if received_bytes < ( chunk_sz + tftp_data_header_bytes ) {
                 completed = true
                 break
             }
@@ -332,7 +334,7 @@ func rrq_session(m *Message, clientaddr *net.UDPAddr) {
     chk_err(err)
 
     // validate if file is present else respond with error
-    payload_sz := 512
+    payload_sz := chunk_sz
     payload := generate_random_bytes(payload_sz)
     key := "key-1"
 
@@ -412,8 +414,41 @@ func rrq_session(m *Message, clientaddr *net.UDPAddr) {
 }
 
 // ---------------------------------
-// File Storage
+// In-Memory File Storage ( concurrent-safe )
 // ---------------------------------
+type File struct {
+    buf []byte
+}
+
+var filestore = struct {
+    sync.RWMutex
+    t map[string]*File
+} { t : make(map[string]*File) }
+
+func create_file(payload []byte) (file *File) {
+    f := new(File)
+    f.buf = make([]byte, len(payload))
+    copy(f.buf, payload)
+    return f
+}
+
+func put(key string, payload []byte) (bool) {
+    file := create_file(payload)
+
+    filestore.Lock()
+    defer filestore.Unlock()
+
+    filestore.t[key] = file
+    return true
+}
+
+func get(key string) (file *File, exists bool) {
+    filestore.RLock()
+    defer filestore.RUnlock()
+
+    v, ok := filestore.t[key]
+    return v, ok
+}
 
 // ---------------------------------
 // Test Client
@@ -433,7 +468,7 @@ func write_file(key string, payload_sz int) (string, bool) {
     msg.opcode = 1
     msg.key = key
     encoded := Encode(msg)
-    server_control_addr, err := net.ResolveUDPAddr("udp", "localhost:9991")
+    server_control_addr, err := net.ResolveUDPAddr("udp", control_port)
     chk_err(err)
     n, err := session_src_conn.WriteToUDP(encoded.Bytes(), server_control_addr) 
     chk_err(err)
@@ -525,7 +560,7 @@ func read_file(key string) {
     msg.opcode = 2
     msg.key = key
     encoded := Encode(msg)
-    server_control_addr, err := net.ResolveUDPAddr("udp", "localhost:9991")
+    server_control_addr, err := net.ResolveUDPAddr("udp", control_port)
     chk_err(err)
     n, err := session_src_conn.WriteToUDP(encoded.Bytes(), server_control_addr) 
     chk_err(err)
@@ -581,7 +616,7 @@ func read_file(key string) {
             trace("[CLIENT] <send> : message-out=%s, bytes=%d, src=%s, dst=%s\n", ack.String(), n, session_src_addr.String(), serveraddr.String());
 
             // If EOF, complete the file storage transaction
-            if received_bytes < 516 {
+            if received_bytes < ( chunk_sz + tftp_data_header_bytes ) {
                 completed = true
                 break
             }
