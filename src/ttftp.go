@@ -4,17 +4,23 @@ import(
     "fmt"
     "net"
     "os"
-//    "time"
     "bytes"
     "encoding/binary"
+    "encoding/base64"
     "log"
     "crypto/rand"
+    "strconv"
+)
+
+const(
+    control_port string = ":9991"
+    chunk_sz int = 512
 )
 
 // ---------------------------------
 // Utilities
 // ---------------------------------
-func check_error(err error) {
+func chk_err(err error) {
     if err != nil {
         fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
         os.Exit(1)
@@ -38,22 +44,46 @@ type Message struct {
     sz int
 }
 
-// func (m Message) String() (string) {
-//     s := "{ "
-//     s += "<" + m.opcode + ">"
-//     if m.opcode == 1 {
-//         s += " " + m.key
-//     } else if m.opcode == 2 {
-//         s += " " + m.key
-//     } else if m.opcode == 3 {
-//         s += " " + m.block
-//         s += " " + m.sz
-//         s += " " + m.payload
-//     } else if m.opcode == 4 {
-//         s += " " + m.block
-//     } else {
-//     }
-// }
+func (m Message) String() (string) {
+    buf := new(bytes.Buffer)
+
+    buf.WriteString("[ ")
+    if m.opcode == 1 {
+        buf.WriteString("<")
+        buf.WriteString("WRQ")
+        buf.WriteString(">")
+        buf.WriteString(" Key=")
+        buf.WriteString(m.key)
+    } else if m.opcode == 2 {
+        buf.WriteString("<")
+        buf.WriteString("RRQ")
+        buf.WriteString(">")
+        buf.WriteString(" ")
+        buf.WriteString(m.key)
+    } else if m.opcode == 3 {
+        buf.WriteString("<")
+        buf.WriteString("DATA")
+        buf.WriteString(">")
+        buf.WriteString(" Block=")
+        buf.WriteString(strconv.Itoa(int(m.block)))
+        buf.WriteString(" PayloadSz=")
+        buf.WriteString(strconv.Itoa(int(m.sz)))
+    } else if m.opcode == 4 {
+        buf.WriteString("<")
+        buf.WriteString("ACK")
+        buf.WriteString(">")
+        buf.WriteString(" Block=")
+        buf.WriteString(strconv.Itoa(int(m.block)))
+    } else if m.opcode == 5 {
+        buf.WriteString("<")
+        buf.WriteString("ERR")
+        buf.WriteString(">")
+    } else {
+        // Ignore
+    }
+    buf.WriteString(" ]")
+    return buf.String()
+}
     
 func Decode(buf *bytes.Buffer) (m *Message) {
     m = new(Message)
@@ -68,8 +98,10 @@ func Decode(buf *bytes.Buffer) (m *Message) {
         key, _ := buf.ReadString(byte(0));
         m.key = key
     } else if opcode == 3 {
-        binary.Read(buf, binary.BigEndian, &m.block);
-        sz, _ := buf.Read(m.payload[0:512])
+        err := binary.Read(buf, binary.BigEndian, &m.block);
+        chk_err(err)
+        sz, err := buf.Read(m.payload[0:512])
+        chk_err(err)
         m.sz = sz
     } else if opcode == 4 {
         binary.Read(buf, binary.BigEndian, &m.block);
@@ -90,24 +122,31 @@ func Encode(m *Message) (buf *bytes.Buffer) {
     opcode := m.opcode
     binary.Write(buf, binary.BigEndian, uint16(m.opcode))
     if opcode == 1 {
-        buf.Write([]byte(m.key))
+        _, err := buf.Write([]byte(m.key))
+        chk_err(err)
     } else if opcode == 2 {
-        buf.Write([]byte(m.key))
+        _, err := buf.Write([]byte(m.key))
+        chk_err(err)
     } else if opcode == 3 {
-        binary.Write(buf, binary.BigEndian, uint16(m.block))
-        buf.Write([]byte(m.payload[0:m.sz]))
+        err := binary.Write(buf, binary.BigEndian, uint16(m.block))
+        chk_err(err)
+        _, err = buf.Write([]byte(m.payload[0:m.sz]))
+        chk_err(err)
     } else if opcode == 4 {
-        binary.Write(buf, binary.BigEndian, uint16(m.block))
+        err := binary.Write(buf, binary.BigEndian, uint16(m.block))
+        chk_err(err)
     } else if opcode == 5 {
-        buf.Write([]byte("NODATA"))
+        _, err := buf.Write([]byte("NODATA"))
+        chk_err(err)
     } else {
-        buf.Write([]byte("NODATA"))
+        _, err := buf.Write([]byte("NODATA"))
+        chk_err(err)
     }
 
     return buf
 }
 
-func CodecTest() {
+func testCodec() {
     // encode
     msg := new(Message)
     msg.opcode = 3
@@ -120,7 +159,7 @@ func CodecTest() {
 
     // decode
     decoded := Decode(encoded)
-    fmt.Println(decoded)
+    fmt.Println(decoded.String())
 }
 
 // ---------------------------------
@@ -129,26 +168,27 @@ func CodecTest() {
 func main() {
     // Control Server UDP Socket
     serveraddr, err := net.ResolveUDPAddr("udp", ":9991")
-    check_error(err)
+    chk_err(err)
     serverconn, err := net.ListenUDP("udp", serveraddr)
-    check_error(err)
+    chk_err(err)
 
-    // TESTING MESSAGES
+    // < TESTING MESSAGES >
     // go routine to create and send a message to this server
     // go send_message()
-    go test_wrq_client(31412)
+    // go test_wrq_client(1200)
+    go write_file("hola", 32354)
 
     // Control Loop
     for {
-        // == recvmsg ==
+        // == recvmsg == ( IO BLOCK )
         var buffer [1500]byte;
         n, clientaddr, err := serverconn.ReadFromUDP(buffer[0:])
-        check_error(err)
-        trace("[%s] <read> : data=%s, bytes=%d, src=%s\n", string(buffer[0:n]), "SERVER", n, clientaddr.String())
+        chk_err(err)
+        trace("[%s] <read> : data=%s, bytes=%d, src=%s\n", "SERVER", string(buffer[0:n]), n, clientaddr.String())
 
         // decode the message
         datain := Decode(bytes.NewBuffer(buffer[0:n]))
-        trace("[%s] <message-in>:[ %s ]\n", "SERVER", datain)
+        trace("[%s] <message-in>:%s\n", "SERVER", datain.String())
 
         // orchestrate
         if datain.opcode == 1 {
@@ -170,15 +210,16 @@ type FileTransferStateIn struct {
 }
 
 func wrq_session(m *Message, clientaddr *net.UDPAddr) {
-    trace("[%s] src=%s message=%s\n", "WRQ Handler", clientaddr.String(), m)
+    trace("[WRQ-HANDLER] src=%s message-in=%s\n", clientaddr.String(), m.String())
 
     // 1. bind a new udp socket ( ListenUDP ) this is our new 'endpoint' for the session
+    // [TODO]
     //var tid uint16
     //tid = 9999
     sessionaddr, err := net.ResolveUDPAddr("udp", ":9999")
-    check_error(err)
+    chk_err(err)
     sessionconn, err := net.ListenUDP("udp", sessionaddr)
-    check_error(err)
+    chk_err(err)
 
     // 2. send the initial ACK for WRQ transfer initiate
     first_ack := new(Message)
@@ -186,33 +227,33 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
     first_ack.block = 0
     encoded_first_ack := Encode(first_ack)
     n, err := sessionconn.WriteToUDP(encoded_first_ack.Bytes(), clientaddr) 
-    check_error(err)
-    trace("[%s] <send> : data=%s, bytes=%d, src=%s, dst=%s\n", "WRQ", first_ack, n, sessionaddr.String(), clientaddr.String());
+    chk_err(err)
+    trace("[WRQ] <send> : message-out=%s, bytes=%d, src=%s, dst=%s\n", first_ack.String(), n, sessionaddr.String(), clientaddr.String());
 
     // 3. Read DATA Blocks
     transfer_state := new(FileTransferStateIn)
     completed := false
     for {
-        trace("%s\n", "Waiting on WRQ session loop")
+        trace("[WRQ] %s\n", "Waiting on WRQ session loop")
 
         // == recvmsg == ( IO BLOCK : wait for data packets )
         var buffer [1500]byte;
         received_bytes, clientaddr, err := sessionconn.ReadFromUDP(buffer[0:])
-        check_error(err)
-        trace("[%s] <read> : data=%s, bytes=%d, src=%s\n", "WRQ", string(buffer[0:n]), received_bytes, clientaddr.String())
+        chk_err(err)
+        trace("[WRQ] <read> : data=%s, bytes=%d, src=%s\n", base64.URLEncoding.EncodeToString(buffer[0:received_bytes]), received_bytes, clientaddr.String())
 
         // [TODO] validate clientaddr to ensure no cross-talk among sessions ( ignoring for now )
 
         // decode the packet
-        datain := Decode(bytes.NewBuffer(buffer[0:n]))
-        trace("[%s] <message-in>:[ %d %d %d %s ]\n", "WRQ", datain.opcode, datain.block, datain.sz, datain.payload)
+        datain := Decode(bytes.NewBuffer(buffer[0:received_bytes]))
+        trace("[%s] <message-in>:%s\n", "WRQ", datain.String())
 
         // collect the data
         if datain.opcode == 3 {
-            trace("%s\n", "GOT DATA!!")
+            trace("[%s] %s\n", "WRQ", "GOT DATA!!")
 
             if datain.block != transfer_state.last_block_received + 1 {
-                trace("Block Sequence Error, Actual=%d, Expected=%d", datain.block, transfer_state.last_block_received + 1)
+                trace("[WRQ] Block Sequence Error, Actual=%d, Expected=%d, Message=%s\n", datain.block, transfer_state.last_block_received + 1, datain.String())
 
                 // send ack
                 er := new(Message)
@@ -220,10 +261,10 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
                 er.errmsg = "Invalid Block Sequence"
                 encoded_er := Encode(er)
                 n, err := sessionconn.WriteToUDP(encoded_er.Bytes(), clientaddr) 
-                check_error(err)
-                trace("[%s] <send> : data=%s, bytes=%d, src=%s, dst=%s\n", "WRQ", er, n, sessionaddr.String(), clientaddr.String());
+                chk_err(err)
+                trace("[%s] <send> : message-out=%s, bytes=%d, src=%s, dst=%s\n", "WRQ", er.String(), n, sessionaddr.String(), clientaddr.String());
 
-                trace("Terminating WRQ Session")
+                trace("[WRQ] Terminating WRQ Session")
                 break;
             }
 
@@ -237,8 +278,8 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
             ack.block = datain.block
             encoded_ack := Encode(ack)
             n, err := sessionconn.WriteToUDP(encoded_ack.Bytes(), clientaddr) 
-            check_error(err)
-            trace("[%s] <send> : data=%s, bytes=%d, src=%s, dst=%s\n", "WRQ", ack, n, sessionaddr.String(), clientaddr.String());
+            chk_err(err)
+            trace("[%s] <send> : message-out=%s, bytes=%d, src=%s, dst=%s\n", "WRQ", ack.String(), n, sessionaddr.String(), clientaddr.String());
 
             // If EOF, complete the file storage transaction
             if received_bytes < 516 {
@@ -259,94 +300,10 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
     }
 }
 
-func test_wrq_client(payload_sz int) {
-    // Setup a UDP socket on which we can listen for events
-    session_src_addr, err := net.ResolveUDPAddr("udp", "localhost:0")
-    check_error(err)
-    session_src_conn, err := net.ListenUDP("udp", session_src_addr)
-    check_error(err)
-
-    // send a wrq message
-    msg := new(Message)
-    msg.opcode = 1
-    msg.key = "key-1"
-    encoded := Encode(msg)
-    server_control_addr, err := net.ResolveUDPAddr("udp", "localhost:9991")
-    check_error(err)
-    n, err := session_src_conn.WriteToUDP(encoded.Bytes(), server_control_addr) 
-    check_error(err)
-    trace("[CLIENT] <send> : data=%s, bytes=%d, src=%s, dst=%s\n", msg, n, session_src_addr.String(), server_control_addr.String());
-
-    chunk_sz := 512
-
-    payload := generate_random_bytes(payload_sz)
-    remaining := payload_sz;
-    st := -1
-    en := -1
-    // wait for ack
-    for {
-        // wait and read the message
-        var buffer [1500]byte;
-        n, session_dst_addr, err := session_src_conn.ReadFromUDP(buffer[0:])
-        check_error(err)
-
-        trace("[CLIENT] <read> : data=%s, bytes=%d, src=%s, dst=%s\n", string(buffer[0:n]), n, session_src_addr.String(), session_dst_addr.String())
-        datain := Decode(bytes.NewBuffer(buffer[0:n]))
-        trace("[CLIENT] <message-in>:[ %s ]\n", datain)
-
-        if datain.opcode == 4 {
-            trace("%s\n", "[CLIENT] received ACK, Sending DATA")
-
-            st = en + 1
-            if (st + chunk_sz - 1) < (st + remaining - 1) {
-                en = st + chunk_sz - 1
-            } else {
-                en = st + remaining - 1
-            }
-
-            trace("St=%d, En=%d\n", st, en)
-
-            dataout := new(Message)
-            dataout.opcode = 3
-            dataout.block = datain.block + 1
-            copy(dataout.payload[:], payload[st:en])
-            dataout.sz = en - st + 1
-            encoded_dataout := Encode(dataout)
-        
-            sent_bytes, err := session_src_conn.WriteToUDP(encoded_dataout.Bytes(), session_dst_addr) 
-            check_error(err)
-            trace("[CLIENT] <send> : data=%s, bytes=%d, src=%s, dst=%s\n", msg, sent_bytes, session_src_addr.String(), session_dst_addr.String());
-
-            remaining = remaining - dataout.sz
-            trace("Remaining=%d\n", remaining)
-            if remaining <= 0 {
-                trace("[CLIENT] COMPLETE sending of File=%s\n", msg.key)
-                break
-            }
-
-        } else {
-            trace("[%s] %s\n", "CLIENT", "Invalid Request For Control Loop")
-        }
-    }
-
-    // send a data message
-}
-
 // ---------------------------------
 // RRQ Session Handler
 // ---------------------------------
 func rrq_session(m *Message, clientaddr *net.UDPAddr) {
-    trace("[%s] %d %s %s\n", "RRQ Handler", m.opcode, m.key, clientaddr.String())
-
-    // generate a tid
-    // bind a new udp socket ( ListenUDP ) this is our new connection
-
-    // validate if file is present else respond with error
-
-    // while there is more data to be sent
-    //  send the data packet
-    //  wait for ack
-    //  once ack'd continue till EOF
 }
 
 // ---------------------------------
@@ -356,10 +313,84 @@ func rrq_session(m *Message, clientaddr *net.UDPAddr) {
 // ---------------------------------
 // Test Client
 // ---------------------------------
-func read_file() {
-}
+func write_file(key string, payload_sz int) (string, bool) {
 
-func write_file() {
+    payload := generate_random_bytes(payload_sz)
+
+    // Setup a UDP socket on which we can listen for events
+    session_src_addr, err := net.ResolveUDPAddr("udp", "localhost:0")
+    chk_err(err)
+    session_src_conn, err := net.ListenUDP("udp", session_src_addr)
+    chk_err(err)
+
+    // send a WRQ message
+    msg := new(Message)
+    msg.opcode = 1
+    msg.key = key
+    encoded := Encode(msg)
+    server_control_addr, err := net.ResolveUDPAddr("udp", "localhost:9991")
+    chk_err(err)
+    n, err := session_src_conn.WriteToUDP(encoded.Bytes(), server_control_addr) 
+    chk_err(err)
+    trace("[CLIENT] <send> : message-out=%s, bytes=%d, src=%s, dst=%s\n", msg.String(), n, session_src_addr.String(), server_control_addr.String());
+
+    // write the data
+    completed := false
+    remaining := payload_sz;
+    st := -1
+    en := -1
+    for {
+        // wait and read the message
+        var buffer [1500]byte;
+        n, session_dst_addr, err := session_src_conn.ReadFromUDP(buffer[0:])
+        chk_err(err)
+        trace("[CLIENT] <read> : data=%s, bytes=%d, src=%s, dst=%s\n", string(buffer[0:n]), n, session_src_addr.String(), session_dst_addr.String())
+
+        datain := Decode(bytes.NewBuffer(buffer[0:n]))
+        trace("[CLIENT] <message-in>:%s\n", datain.String())
+
+        if datain.opcode == 4 {
+            trace("%s\n", "[CLIENT] received ACK, Sending DATA")
+
+            if completed == true {
+                // were waiting for the last ACK which we recieved
+                trace("%s\n", "[CLIENT] COMPLETED : received last ack, Key=%s\n", key)
+                break;
+            }
+
+            // determine chunk to send
+            st = en + 1
+            if (st + chunk_sz - 1) < (st + remaining - 1) {
+                en = st + chunk_sz - 1
+            } else {
+                en = st + remaining - 1
+            }
+            trace("[CLIENT] St=%d, En=%d\n", st, en)
+
+            dataout := new(Message)
+            dataout.opcode = 3
+            dataout.block = datain.block + 1
+            copy(dataout.payload[0:], payload[st:en+1])
+            dataout.sz = en - st + 1
+
+            encoded_dataout := Encode(dataout)
+            sent_bytes, err := session_src_conn.WriteToUDP(encoded_dataout.Bytes(), session_dst_addr) 
+            chk_err(err)
+            trace("[CLIENT] <send> : message-out=%s, bytes=%d, src=%s, dst=%s\n", dataout.String(), sent_bytes, session_src_addr.String(), session_dst_addr.String());
+
+            remaining = remaining - dataout.sz
+            trace("[CLIENT] Remaining=%d\n", remaining)
+            if remaining <= 0 {
+                completed = true
+                trace("[CLIENT] all bytes sent out for File=%s\n", key)
+            }
+
+        } else {
+            trace("[%s] %s\n", "CLIENT", "Invalid Request For Control Loop")
+        }
+    }
+
+    return key, true
 }
 
 // ---------------------------------
@@ -367,17 +398,17 @@ func write_file() {
 // ---------------------------------
 func generate_random_bytes(sz int) (buf []byte) {
     b := make([]byte, sz)
-    _, err := rand.Read(buf)
-    check_error(err)
+    _, err := rand.Read(b)
+    chk_err(err)
     return b
 }
 
 func send_message() {
     dstaddr, err := net.ResolveUDPAddr("udp", "localhost:9991")
-    check_error(err)
+    chk_err(err)
 
     dstconn, err := net.DialUDP("udp", nil, dstaddr)
-    check_error(err)
+    chk_err(err)
 
     // msg := "<HOLA>:<" + time.Now().String() + ">"
     // fmt.Println(00, msg)
@@ -392,7 +423,7 @@ func send_message() {
     encoded := Encode(msg)
     // fmt.Println(encoded.Bytes())
     n, err := dstconn.Write(encoded.Bytes()) 
-    check_error(err)
+    chk_err(err)
     trace("[CLIENT] <send> : data=%s, bytes=%d, dst=%s\n", msg, n, dstaddr.String());
     
     msg = new(Message)
@@ -400,7 +431,7 @@ func send_message() {
     msg.key = "key-1"
     encoded = Encode(msg)
     n, err = dstconn.Write(encoded.Bytes()) 
-    check_error(err)
+    chk_err(err)
     trace("[CLIENT] <send> : data=%s, bytes=%d, dst=%s\n", msg, n, dstaddr.String());
 
     msg = new(Message)
@@ -408,7 +439,7 @@ func send_message() {
     msg.key = "key-1"
     encoded = Encode(msg)
     n, err = dstconn.Write(encoded.Bytes()) 
-    check_error(err)
+    chk_err(err)
     trace("[CLIENT] <send> : data=%s, bytes=%d, dst=%s\n", msg, n, dstaddr.String());
 }
 
