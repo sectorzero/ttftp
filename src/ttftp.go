@@ -1,20 +1,21 @@
 package main
 
 // TODO 
-// - Fix for terminating data packet to be 0 byte in eedge cases
 // - random tid choosing
 // - File storage
 // - Fix for sending last ack upon storing file
+// - Endianess 
 
 import(
+    "bytes"
+    "crypto/rand"
+    "encoding/base64"
+    "encoding/binary"
     "fmt"
+    "io"
+    "log"
     "net"
     "os"
-    "bytes"
-    "encoding/binary"
-    "encoding/base64"
-    "log"
-    "crypto/rand"
     "strconv"
 )
 
@@ -107,8 +108,12 @@ func Decode(buf *bytes.Buffer) (m *Message) {
         err := binary.Read(buf, binary.BigEndian, &m.block);
         chk_err(err)
         sz, err := buf.Read(m.payload[0:512])
-        chk_err(err)
-        m.sz = sz
+        if err != nil && err == io.EOF {
+            m.sz = 0
+        } else {
+            chk_err(err)
+            m.sz = sz
+        }
     } else if opcode == 4 {
         binary.Read(buf, binary.BigEndian, &m.block);
     } else if opcode == 5 {
@@ -180,8 +185,8 @@ func main() {
 
     // < TESTING MESSAGES >
     // go routine to create and send a message to this server
-    // go write_file("hola", 32354)
-    go read_file("hola")
+    go write_file("hola", 513)
+    // go read_file("hola")
 
     // Control Loop
     for {
@@ -189,11 +194,11 @@ func main() {
         var buffer [1500]byte;
         n, clientaddr, err := serverconn.ReadFromUDP(buffer[0:])
         chk_err(err)
-        trace("[%s] <read> : data=%s, bytes=%d, src=%s\n", "SERVER", string(buffer[0:n]), n, clientaddr.String())
+        trace("[SERVER] <read> : data=%s, bytes=%d, src=%s\n", string(buffer[0:n]), n, clientaddr.String())
 
         // decode the message
         datain := Decode(bytes.NewBuffer(buffer[0:n]))
-        trace("[%s] <message-in>:%s\n", "SERVER", datain.String())
+        trace("[SERVER] <message-in>:%s\n", datain.String())
 
         // orchestrate
         if datain.opcode == 1 {
@@ -201,7 +206,7 @@ func main() {
         } else if datain.opcode == 2 {
             go rrq_session(datain, clientaddr)
         } else {
-            trace("[%s] %s\n", "SERVER", "Invalid Request For Control Loop")
+            trace("[SERVER] %s\n", "Invalid Request For Control Loop")
         }
     }
 }
@@ -322,32 +327,42 @@ func rrq_session(m *Message, clientaddr *net.UDPAddr) {
     chk_err(err)
 
     // validate if file is present else respond with error
-    payload_sz := 23423
+    payload_sz := 512
     payload := generate_random_bytes(payload_sz)
     key := "key-1"
 
     // send data
     completed := false
+    send_zero_eof := false
     remaining := payload_sz;
-    st := -1
-    en := -1
+    st := 0
+    en := 0
     var block uint16 = 0
     for {
-        // determine chunk to send
-        st = en + 1
-        if (st + chunk_sz - 1) < (st + remaining - 1) {
-            en = st + chunk_sz - 1
-        } else {
-            en = st + remaining - 1
-        }
         block = block + 1
-        trace("[RRQ] preparing to send data chunk : St=%d, En=%d, Block=%d\n", st, en, block)
 
         dataout := new(Message)
         dataout.opcode = 3
         dataout.block = block
-        copy(dataout.payload[0:], payload[st:en+1])
-        dataout.sz = en - st + 1
+
+        // determine chunk to send
+        if send_zero_eof == true {
+            dataout.sz = 0
+            var emptybuf [0]byte
+            copy(dataout.payload[0:], emptybuf[0:0])
+            trace("[RRQ] preparing to send zero packet eof : Block=%d\n", block)
+        } else {
+            st = en
+            if (st + chunk_sz) < (st + remaining) {
+                en = st + chunk_sz
+            } else {
+                en = st + remaining
+            }
+            trace("[RRQ] preparing to send data chunk : St=%d, En=%d, Block=%d\n", st, en, block)
+
+            copy(dataout.payload[0:], payload[st:en])
+            dataout.sz = en - st
+        }
 
         encoded_dataout := Encode(dataout)
         sent_bytes, err := sessionconn.WriteToUDP(encoded_dataout.Bytes(), clientaddr) 
@@ -357,8 +372,14 @@ func rrq_session(m *Message, clientaddr *net.UDPAddr) {
         remaining = remaining - dataout.sz
         trace("[RRQ] Remaining=%d\n", remaining)
         if remaining <= 0 {
-            completed = true
-            trace("[RRQ] all bytes sent out for File=%s\n", key)
+            // if the last chunk is exactly 512 bytes, then we need to
+            // send a 0 byte payload to indicate EOF
+            if dataout.sz == chunk_sz {
+                send_zero_eof = true
+            } else {
+                completed = true
+                trace("[RRQ] all bytes sent out for File=%s\n", key)
+            }
         }
 
         // wait for ack
@@ -415,9 +436,10 @@ func write_file(key string, payload_sz int) (string, bool) {
 
     // write the data
     completed := false
+    send_zero_eof := false
     remaining := payload_sz;
-    st := -1
-    en := -1
+    st := 0
+    en := 0
     for {
         // wait and read the message
         var buffer [1500]byte;
@@ -437,20 +459,28 @@ func write_file(key string, payload_sz int) (string, bool) {
                 break;
             }
 
-            // determine chunk to send
-            st = en + 1
-            if (st + chunk_sz - 1) < (st + remaining - 1) {
-                en = st + chunk_sz - 1
-            } else {
-                en = st + remaining - 1
-            }
-            trace("[CLIENT] St=%d, En=%d\n", st, en)
-
             dataout := new(Message)
             dataout.opcode = 3
             dataout.block = datain.block + 1
-            copy(dataout.payload[0:], payload[st:en+1])
-            dataout.sz = en - st + 1
+
+            // determine chunk to send
+            if send_zero_eof == true {
+                dataout.sz = 0
+                var emptybuf [0]byte
+                copy(dataout.payload[0:], emptybuf[0:0])
+                trace("[CLIENT] preparing to send zero packet eof : Block=%d\n", dataout.block)
+            } else {
+                st = en
+                if (st + chunk_sz) < (st + remaining) {
+                    en = st + chunk_sz
+                } else {
+                    en = st + remaining
+                }
+                trace("[CLIENT] preparing to send data chunk : St=%d, En=%d, Block=%d\n", st, en, dataout.block)
+
+                copy(dataout.payload[0:], payload[st:en])
+                dataout.sz = en - st
+            }
 
             encoded_dataout := Encode(dataout)
             sent_bytes, err := session_src_conn.WriteToUDP(encoded_dataout.Bytes(), session_dst_addr) 
@@ -460,8 +490,14 @@ func write_file(key string, payload_sz int) (string, bool) {
             remaining = remaining - dataout.sz
             trace("[CLIENT] Remaining=%d\n", remaining)
             if remaining <= 0 {
-                completed = true
-                trace("[CLIENT] all bytes sent out for File=%s\n", key)
+                // if the last chunk is exactly 512 bytes, then we need to
+                // send a 0 byte payload to indicate EOF
+                if dataout.sz == chunk_sz {
+                    send_zero_eof = true
+                } else {
+                    completed = true
+                    trace("[CLIENT] all bytes sent out for File=%s\n", key)
+                }
             }
 
         } else {
