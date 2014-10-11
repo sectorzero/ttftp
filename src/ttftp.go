@@ -201,21 +201,12 @@ func main() {
     }
 }
 
-
 // ---------------------------------
 // WRQ Session Handler
 // ---------------------------------
 type FileTransferStateIn struct {
     buf bytes.Buffer
     last_block_received uint16
-}
-
-func get_session_tag(src_addr *net.UDPAddr, dst_addr *net.UDPAddr) (tag string) {
-    buf := new(bytes.Buffer)
-    buf.WriteString(strings.Split(src_addr.String(), ":")[1])
-    buf.WriteString(":")
-    buf.WriteString(strings.Split(dst_addr.String(), ":")[1])
-    return buf.String()
 }
 
 func wrq_session(m *Message, clientaddr *net.UDPAddr) {
@@ -486,6 +477,15 @@ func get_random_tid() (tid_port string) {
     buf.WriteString(strconv.Itoa(port))
     return buf.String()
 }
+
+func get_session_tag(src_addr *net.UDPAddr, dst_addr *net.UDPAddr) (tag string) {
+    buf := new(bytes.Buffer)
+    buf.WriteString(strings.Split(src_addr.String(), ":")[1])
+    buf.WriteString(":")
+    buf.WriteString(strings.Split(dst_addr.String(), ":")[1])
+    return buf.String()
+}
+
 
 // ---------------------------------
 // Test Clients For Read/Write
