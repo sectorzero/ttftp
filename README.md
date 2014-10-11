@@ -9,6 +9,7 @@ System Description And Requirements
 - Partial byte-streams ( during upload ) should not be visible
 
 Features Implemented ( and Not )
+--------
 - Minimal TFTP server which mostly implements the functionality. WRQ and RRQ
   are implemented as per RFC 1350 with some skips in error handling and robustness
 - Only supports binary/octet, does not know anything about modes
@@ -63,14 +64,18 @@ learning curve for me
 
 How to run
 ----------
+<pre><code>
 $> go run src/ttftp.go
+</code></pre>
 
 How to run tests
 ----------------
 Runs some concurrent sessions which write a random payload and read it multiple
 times and verifies the in and out hashes
+<pre><code>
 $> go run src/ttftp.go -test
 $> go run src/ttftp.go -test 2>&1 | egrep 'TESTER'
+</code></pre>
 
 Where was time spent
 --------------------
@@ -92,6 +97,7 @@ Traces
 ------
 Tracing of events is by default - cannot turn it off. 
 Example of Write followed by a Read session for 513 bytes ( 2 data packets )
+<pre><code>
 2014/10/10 20:53:39 [CLIENT] <send> : message-out=[ <WRQ> Key=key_513 ], bytes=9, src=127.0.0.1:0, dst=127.0.0.1:9991
 2014/10/10 20:53:39 [SERVER] <message-in>:[ <WRQ> Key=key_513 ]
 2014/10/10 20:53:39 [WRQ-HANDLER] src=127.0.0.1:56609 message-in=[ <WRQ> Key=key_513 ]
@@ -130,4 +136,5 @@ Example of Write followed by a Read session for 513 bytes ( 2 data packets )
 2014/10/10 20:53:39 [RRQ (57156:13249)] <message-in>:[ <ACK> Block=2 ]
 2014/10/10 20:53:39 [RRQ (57156:13249)] COMPLETED : received last ack, Key=key_513
 2014/10/10 20:53:39 [TESTER] [OK] write_hash=[8ed230a960affa9e7276ef90f0d32e40760beb14], read_hash=[8ed230a960affa9e7276ef90f0d32e40760beb14]
+</code></pre>
 
