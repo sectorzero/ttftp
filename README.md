@@ -1,6 +1,6 @@
 System Description And Requirements
 
-What is implemented and what is not
+Features Implemented ( and Not )
 
 Server Design
 
