@@ -24,7 +24,7 @@ or writers
 without any corruption
 
 - Shortcomings
-  - I could not get the endianess parsing correctly - could not figure out the equivalent of ntohl
+  - I could not get the endianess parsing correctly - could not figure out the equivalent of ntohl. There are few things which come as integers like opcode, block num etc. I have treated that byte ordering to be big-endian
   - Some features not implemented as commented in source
   - Error handling and validation not robust at places
 
