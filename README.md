@@ -64,6 +64,7 @@ learning curve for me
 
 How to run
 ----------
+* Binds/Listens on port 9991
 <pre><code>
 $> go run src/ttftp.go
 </code></pre>
