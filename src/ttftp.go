@@ -25,35 +25,14 @@ import(
     "sync"
 )
 
+// ---------------------------------
+// Constants
+// ---------------------------------
 const(
     control_port string = "localhost:9991"
     chunk_sz int = 512
     tftp_data_header_bytes int = 4
 )
-
-// ---------------------------------
-// Utilities
-// ---------------------------------
-func chk_err(err error) {
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
-        os.Exit(1)
-    }
-}
-
-func trace(format string, v ...interface{}) {
-    log.Printf(format, v...)
-}
-
-func get_random_tid() (tid_port string) {
-    buf := new(bytes.Buffer)
-    buf.WriteString(":")
-    max := big.NewInt(5000);
-    portrange, _ := rand.Int(rand.Reader, max)
-    port := int(portrange.Uint64()) + 10000
-    buf.WriteString(strconv.Itoa(port))
-    return buf.String()
-}
 
 // ---------------------------------
 // TFTP Protocol Encoding/Decoding
@@ -172,22 +151,6 @@ func Encode(m *Message) (buf *bytes.Buffer) {
     }
 
     return buf
-}
-
-func testCodec() {
-    // encode
-    msg := new(Message)
-    msg.opcode = 3
-    msg.block = 213
-    payload :=  "asdfaksdjflkasjdfjaslkdfjlaksdaadsfa"
-    copy(msg.payload[:], payload)
-    msg.sz = len(payload)
-    encoded := Encode(msg)
-    fmt.Println(encoded.Bytes())
-
-    // decode
-    decoded := Decode(encoded)
-    fmt.Println(decoded.String())
 }
 
 // ---------------------------------
@@ -486,6 +449,30 @@ func get(key string) (file *File, exists bool) {
 }
 
 // ---------------------------------
+// Utilities
+// ---------------------------------
+func chk_err(err error) {
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+        os.Exit(1)
+    }
+}
+
+func trace(format string, v ...interface{}) {
+    log.Printf(format, v...)
+}
+
+func get_random_tid() (tid_port string) {
+    buf := new(bytes.Buffer)
+    buf.WriteString(":")
+    max := big.NewInt(5000);
+    portrange, _ := rand.Int(rand.Reader, max)
+    port := int(portrange.Uint64()) + 10000
+    buf.WriteString(strconv.Itoa(port))
+    return buf.String()
+}
+
+// ---------------------------------
 // Test Clients For Read/Write
 // ---------------------------------
 func write_file(key string, payload_sz int) (string, bool) {
@@ -673,6 +660,22 @@ func read_file(key string) (hash string, ok bool) {
     } else {
         return "", false
     }
+}
+
+func testCodec() {
+    // encode
+    msg := new(Message)
+    msg.opcode = 3
+    msg.block = 213
+    payload :=  "asdfaksdjflkasjdfjaslkdfjlaksdaadsfa"
+    copy(msg.payload[:], payload)
+    msg.sz = len(payload)
+    encoded := Encode(msg)
+    fmt.Println(encoded.Bytes())
+
+    // decode
+    decoded := Decode(encoded)
+    fmt.Println(decoded.String())
 }
 
 // ---------------------------------
