@@ -79,7 +79,7 @@ $> go run src/ttftp.go -test 2>&1 | egrep 'TESTER'
 
 Where was time spent
 --------------------
-I took totally about 15-17 hours to get this done and running well.
+I took totally about 13-15 hours to get this done and running well.
 - Spent a few hours understanding the protocol and coming up with an effective
   server design. I evaluated choices of language etc.
 - I choose Go. I did not know anything about Go at first. Once I read about
