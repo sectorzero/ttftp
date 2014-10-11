@@ -43,21 +43,20 @@ event-driven i/o and managing your state machine is hidden way beautifully
 Module Design
 -------------
 * Server Control Loop
-    Waits for control requests WRQ/RRQ and sheperds off goroutines to handle
-    the session
+  - Waits for control requests WRQ/RRQ and sheperds off goroutines to handle the session
 * WRQ Session Handler
-    Starts a new WRQ session by opening a new UDP socket for the session
+  - Starts a new WRQ session by opening a new UDP socket for the session
 * RRQ Session Handler
-    Starts a new RRQ session by opening a new UDP socket for the session
+  - Starts a new RRQ session by opening a new UDP socket for the session
 * TFPT Protocol Codec
-    Decodes the protocol bytes to an app level TFTP 'message'
-    Encodes the app level TFTP 'message' to a protocol frame bytes
+  - Decodes the protocol bytes to an app level TFTP 'message'
+  - Encodes the app level TFTP 'message' to a protocol frame bytes
 * File Store
-    Im-Memory map to hold file abstractions of byte arrays
-    Protected concurrent r/w access
+  - In-Memory map to hold file abstractions of byte arrays
+  - Protected concurrent r/w access
 * Test Client
-    Put a file to the server
-    Get a file from the server
+  - Put a file to the server
+  - Get a file from the server
 
 Choice of Language
 ------------------
