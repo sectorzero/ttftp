@@ -55,6 +55,9 @@ Module Design
 * File Store
     Im-Memory map to hold file abstractions of byte arrays
     Protected concurrent r/w access
+* Test Client
+    Put a file to the server
+    Get a file from the server
 
 Choice of Language
 ------------------
