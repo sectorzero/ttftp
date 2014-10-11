@@ -106,42 +106,41 @@ Traces
 Tracing of events is by default - cannot turn it off. 
 Example of Write followed by a Read session for 513 bytes ( 2 data packets )
 <pre><code>
-2014/10/10 20:53:39 [CLIENT] <send> : message-out=[ <WRQ> Key=key_513 ], bytes=9, src=127.0.0.1:0, dst=127.0.0.1:9991
-2014/10/10 20:53:39 [SERVER] <message-in>:[ <WRQ> Key=key_513 ]
-2014/10/10 20:53:39 [WRQ-HANDLER] src=127.0.0.1:56609 message-in=[ <WRQ> Key=key_513 ]
+2014/10/10 20:53:39 [CLIENT] (send) : message-out=[ (WRQ) Key=key_513 ], bytes=9, src=127.0.0.1:0, dst=127.0.0.1:9991
+2014/10/10 20:53:39 [SERVER] (message-in):[ (WRQ) Key=key_513 ]
+2014/10/10 20:53:39 [WRQ-HANDLER] src=127.0.0.1:56609 message-in=[ (WRQ) Key=key_513 ]
 2014/10/10 20:53:39 [WRQ (56609:12289)] Starting WRQ Session
-2014/10/10 20:53:39 [WRQ (56609:12289)] <send> : message-out=[ <ACK> Block=0 ], bytes=4, src=:12289, dst=127.0.0.1:56609
-2014/10/10 20:53:39 [CLIENT (0:12289)] <message-in>:[ <ACK> Block=0 ]
-2014/10/10 20:53:39 [CLIENT (0:12289)] <send> : message-out=[ <DATA> Block=1 PayloadSz=512 ], bytes=516, src=127.0.0.1:0, dst=127.0.0.1:12289
-2014/10/10 20:53:39 [WRQ (56609:12289)] <message-in>:[ <DATA> Block=1 PayloadSz=512 ]
-2014/10/10 20:53:39 [WRQ (56609:12289)] <send> : message-out=[ <ACK> Block=1 ], bytes=4, src=:12289, dst=127.0.0.1:56609
-2014/10/10 20:53:39 [CLIENT (0:12289)] <message-in>:[ <ACK> Block=1 ]
-2014/10/10 20:53:39 [CLIENT (0:12289)] <send> : message-out=[ <DATA> Block=2 PayloadSz=1 ], bytes=5, src=127.0.0.1:0, dst=127.0.0.1:12289
+2014/10/10 20:53:39 [WRQ (56609:12289)] (send) : message-out=[ (ACK) Block=0 ], bytes=4, src=:12289, dst=127.0.0.1:56609
+2014/10/10 20:53:39 [CLIENT (0:12289)] (message-in):[ (ACK) Block=0 ]
+2014/10/10 20:53:39 [CLIENT (0:12289)] (send) : message-out=[ (DATA) Block=1 PayloadSz=512 ], bytes=516, src=127.0.0.1:0, dst=127.0.0.1:12289
+2014/10/10 20:53:39 [WRQ (56609:12289)] (message-in):[ (DATA) Block=1 PayloadSz=512 ]
+2014/10/10 20:53:39 [WRQ (56609:12289)] (send) : message-out=[ (ACK) Block=1 ], bytes=4, src=:12289, dst=127.0.0.1:56609
+2014/10/10 20:53:39 [CLIENT (0:12289)] (message-in):[ (ACK) Block=1 ]
+2014/10/10 20:53:39 [CLIENT (0:12289)] (send) : message-out=[ (DATA) Block=2 PayloadSz=1 ], bytes=5, src=127.0.0.1:0, dst=127.0.0.1:12289
 2014/10/10 20:53:39 [CLIENT (0:12289)] all bytes sent out for File=key_513
-2014/10/10 20:53:39 [WRQ (56609:12289)] <message-in>:[ <DATA> Block=2 PayloadSz=1 ]
-2014/10/10 20:53:39 [WRQ (56609:12289)] <send> : message-out=[ <ACK> Block=2 ], bytes=4, src=:12289, dst=127.0.0.1:56609
+2014/10/10 20:53:39 [WRQ (56609:12289)] (message-in):[ (DATA) Block=2 PayloadSz=1 ]
+2014/10/10 20:53:39 [WRQ (56609:12289)] (send) : message-out=[ (ACK) Block=2 ], bytes=4, src=:12289, dst=127.0.0.1:56609
 2014/10/10 20:53:39 [WRQ (56609:12289)] data receieved fully, storing file Key=key_513
 2014/10/10 20:53:39 [FILESTORE] Request to PUT file, Key=key_513, Size=513
 2014/10/10 20:53:39 [WRQ (56609:12289)] COMPLETED, File=key_513
-2014/10/10 20:53:39 [CLIENT (0:12289)] <message-in>:[ <ACK> Block=2 ]
+2014/10/10 20:53:39 [CLIENT (0:12289)] (message-in):[ (ACK) Block=2 ]
 2014/10/10 20:53:39 [CLIENT (%s)] COMPLETED : received last ack, Key=%s
-
-2014/10/10 20:53:39 [CLIENT] <send> : message-out=[ <RRQ> key_513 ], bytes=9, src=127.0.0.1:0, dst=127.0.0.1:9991
-2014/10/10 20:53:39 [SERVER] <message-in>:[ <RRQ> key_513 ]
-2014/10/10 20:53:39 [RRQ-HANDLER] src=127.0.0.1:57156 message-in=[ <RRQ> key_513 ]
+2014/10/10 20:53:39 [CLIENT] (send) : message-out=[ (RRQ) key_513 ], bytes=9, src=127.0.0.1:0, dst=127.0.0.1:9991
+2014/10/10 20:53:39 [SERVER] (message-in):[ (RRQ) key_513 ]
+2014/10/10 20:53:39 [RRQ-HANDLER] src=127.0.0.1:57156 message-in=[ (RRQ) key_513 ]
 2014/10/10 20:53:39 [RRQ (57156:13249)] Starting WRQ Session
 2014/10/10 20:53:39 [FILESTORE] Request to GET file, Key=key_513
-2014/10/10 20:53:39 [RRQ (57156:13249)] <send> : message-out=[ <DATA> Block=1 PayloadSz=512 ], bytes=516, src=:13249, dst=127.0.0.1:57156
-2014/10/10 20:53:39 [CLIENT (0:13249)] <message-in>:[ <DATA> Block=1 PayloadSz=512 ]
-2014/10/10 20:53:39 [CLIENT (0:13249)] <send> : message-out=[ <ACK> Block=1 ], bytes=4, src=127.0.0.1:0, dst=127.0.0.1:13249
-2014/10/10 20:53:39 [RRQ (57156:13249)] <message-in>:[ <ACK> Block=1 ]
-2014/10/10 20:53:39 [RRQ (57156:13249)] <send> : message-out=[ <DATA> Block=2 PayloadSz=1 ], bytes=5, src=:13249, dst=127.0.0.1:57156
+2014/10/10 20:53:39 [RRQ (57156:13249)] (send) : message-out=[ (DATA) Block=1 PayloadSz=512 ], bytes=516, src=:13249, dst=127.0.0.1:57156
+2014/10/10 20:53:39 [CLIENT (0:13249)] (message-in):[ (DATA) Block=1 PayloadSz=512 ]
+2014/10/10 20:53:39 [CLIENT (0:13249)] (send) : message-out=[ (ACK) Block=1 ], bytes=4, src=127.0.0.1:0, dst=127.0.0.1:13249
+2014/10/10 20:53:39 [RRQ (57156:13249)] (message-in):[ (ACK) Block=1 ]
+2014/10/10 20:53:39 [RRQ (57156:13249)] (send) : message-out=[ (DATA) Block=2 PayloadSz=1 ], bytes=5, src=:13249, dst=127.0.0.1:57156
 2014/10/10 20:53:39 [RRQ (57156:13249)] all bytes sent out for File=key_513
-2014/10/10 20:53:39 [CLIENT (0:13249)] <message-in>:[ <DATA> Block=2 PayloadSz=1 ]
-2014/10/10 20:53:39 [CLIENT (0:13249)] <send> : message-out=[ <ACK> Block=2 ], bytes=4, src=127.0.0.1:0, dst=127.0.0.1:13249
+2014/10/10 20:53:39 [CLIENT (0:13249)] (message-in):[ (DATA) Block=2 PayloadSz=1 ]
+2014/10/10 20:53:39 [CLIENT (0:13249)] (send) : message-out=[ (ACK) Block=2 ], bytes=4, src=127.0.0.1:0, dst=127.0.0.1:13249
 2014/10/10 20:53:39 [CLIENT (0:13249)] data receieved fully for Key=key_513, bytes=%!s(int=513)
 2014/10/10 20:53:39 [CLIENT (0:13249)] RRQ RECIEVE COMPLETED, File=key_513
-2014/10/10 20:53:39 [RRQ (57156:13249)] <message-in>:[ <ACK> Block=2 ]
+2014/10/10 20:53:39 [RRQ (57156:13249)] (message-in):[ (ACK) Block=2 ]
 2014/10/10 20:53:39 [RRQ (57156:13249)] COMPLETED : received last ack, Key=key_513
 2014/10/10 20:53:39 [TESTER] [OK] write_hash=[8ed230a960affa9e7276ef90f0d32e40760beb14], read_hash=[8ed230a960affa9e7276ef90f0d32e40760beb14]
 </code></pre>
