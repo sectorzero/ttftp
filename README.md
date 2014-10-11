@@ -23,6 +23,11 @@ or writers
     - Concurrent writers to the same key are ok and one will overwrite the other
 without any corruption
 
+- Shortcomings
+  - I could not get the endianess parsing correctly - could not figure out the equivalent of ntohl
+  - Some features not implemented as commented in source
+  - Error handling and validation not robust at places
+
 Server Design
 -------------
 Since we want to support multiple readers and writers to operate in asynchronous manners possibly at different rates and high levels of concurrency, the best design is to use asynchronous event-driven i/o. We want to decouple 'workers' from 'sessions. In this way large number of UDP ports which are bound and listening and can 
