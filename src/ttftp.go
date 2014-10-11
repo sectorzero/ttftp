@@ -1,15 +1,19 @@
 package main
 
 // TODO 
-// - File storage
 // - Fix for sending last ack upon storing file
 // - Endianess 
+// - Validate requesting endpoint so that no x-talk between sessions or hijacking
+// - Robust error handling
+// - ERR packets for some instances
 
 import(
     "bytes"
     "crypto/rand"
+    "crypto/sha1"
     "encoding/base64"
     "encoding/binary"
+    "flag"
     "fmt"
     "io"
     "log"
@@ -17,6 +21,7 @@ import(
     "net"
     "os"
     "strconv"
+    "strings"
     "sync"
 )
 
@@ -188,26 +193,26 @@ func testCodec() {
 // ---------------------------------
 // TFTP Control Service
 // ---------------------------------
+var doTest = flag.Bool("test", false, "run sample messaging")
+
 func main() {
+    flag.Parse()
+
     // Control Server UDP Socket
     serveraddr, err := net.ResolveUDPAddr("udp", control_port)
     chk_err(err)
     serverconn, err := net.ListenUDP("udp", serveraddr)
     chk_err(err)
 
-    // < TESTING MESSAGES >
-
-    // go write_file("key_511", 511)
-    // go write_file("key_512", 512)
-    // go write_file("key_513", 513)
-
-    // go read_file("hola")
-
-    go test_rw("key_511", 511)
-    go test_rw("key_512", 512)
-    go test_rw("key_513", 513)
-
-    // < TESTING MESSAGES >
+    // Test Messages
+    if *doTest == true {
+        // < TESTING MESSAGES >
+        go test_rw("key_511", 511, 10)
+        go test_rw("key_512", 512, 10)
+        go test_rw("key_513", 513, 10)
+        go test_rw("key_99845", 99845, 2)
+        // < TESTING MESSAGES >
+    }
 
     // Control Loop
     for {
@@ -232,12 +237,6 @@ func main() {
     }
 }
 
-func test_rw(key string, payload_sz int) {
-    write_file(key, payload_sz)
-    read_file(key)
-    read_file(key)
-    read_file(key)
-}
 
 // ---------------------------------
 // WRQ Session Handler
@@ -287,7 +286,7 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
 
         // collect the data
         if datain.opcode == 3 {
-            trace("[%s] %s\n", "WRQ", "GOT DATA!!")
+            trace("[WRQ] %s\n", "GOT DATA!!")
 
             if datain.block != transfer_state.last_block_received + 1 {
                 trace("[WRQ] Block Sequence Error, Actual=%d, Expected=%d, Message=%s\n", datain.block, transfer_state.last_block_received + 1, datain.String())
@@ -317,7 +316,7 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
             encoded_ack := Encode(ack)
             n, err := sessionconn.WriteToUDP(encoded_ack.Bytes(), clientaddr) 
             chk_err(err)
-            trace("[%s] <send> : message-out=%s, bytes=%d, src=%s, dst=%s\n", "WRQ", ack.String(), n, sessionaddr.String(), clientaddr.String());
+            trace("[WRQ] <send> : message-out=%s, bytes=%d, src=%s, dst=%s\n", ack.String(), n, sessionaddr.String(), clientaddr.String());
 
             // If EOF, complete the file storage transaction
             if received_bytes < ( chunk_sz + tftp_data_header_bytes ) {
@@ -329,6 +328,7 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
         }
     }
 
+    // [TODO] last ack can signify error if unable to store ( ignoring for now )
     if completed == true {
         trace("[WRQ] data receieved fully, storing file Key=%s\n", m.key)
 
@@ -337,7 +337,6 @@ func wrq_session(m *Message, clientaddr *net.UDPAddr) {
         put(m.key, transfer_state.buf.Bytes()[0:datain_bytes])
 
         trace("[WRQ] COMPLETED, File=%s\n", m.key)
-        // [TODO] last ack can signify error if unable to store ( ignoring for now )
     }
 }
 
@@ -487,11 +486,12 @@ func get(key string) (file *File, exists bool) {
 }
 
 // ---------------------------------
-// Test Client
+// Test Clients For Read/Write
 // ---------------------------------
 func write_file(key string, payload_sz int) (string, bool) {
 
     payload := generate_random_bytes(payload_sz)
+    hash := compute_sha1(payload)
 
     // Setup a UDP socket on which we can listen for events
     session_src_addr, err := net.ResolveUDPAddr("udp", "localhost:0")
@@ -581,10 +581,10 @@ func write_file(key string, payload_sz int) (string, bool) {
         }
     }
 
-    return key, true
+    return hash, true
 }
 
-func read_file(key string) {
+func read_file(key string) (hash string, ok bool) {
     // Setup a UDP socket on which we can listen for events
     session_src_addr, err := net.ResolveUDPAddr("udp", "localhost:0")
     chk_err(err)
@@ -605,6 +605,7 @@ func read_file(key string) {
     // receive data
     transfer_state := new(FileTransferStateIn)
     completed := false
+    datain_bytes := 0
     for {
         trace("[CLIENT] %s\n", "waiting for DATA to arrive for RRQ")
 
@@ -641,6 +642,7 @@ func read_file(key string) {
             // append/store data in temp buffer
             transfer_state.buf.Write(datain.payload[:])
             transfer_state.last_block_received = datain.block
+            datain_bytes += datain.sz
 
             // send ack
             ack := new(Message)
@@ -663,19 +665,48 @@ func read_file(key string) {
 
     if completed == true {
         // store the file
-        trace("[CLIENT] data receieved fully for Key=%s\n", key)
+        trace("[CLIENT] data receieved fully for Key=%s, bytes=%s\n", key, datain_bytes)
+        hash := compute_sha1(transfer_state.buf.Bytes()[0:datain_bytes])
         trace("[CLIENT] RRQ RECIEVE COMPLETED, File=%s\n", key)
+
+        return hash, true
+    } else {
+        return "", false
     }
 }
 
 // ---------------------------------
-// Test Stuff
+// Test Utilities
 // ---------------------------------
+func test_rw(key string, payload_sz int, read_times int) {
+
+    w_hash, _ := write_file(key, payload_sz)
+
+    for i := 0; i < read_times; i++ {
+        r_hash, _ := read_file(key)
+        match := strings.EqualFold(w_hash, r_hash)
+        if match {
+            trace("[TESTER] [OK] write_hash=%s, read_hash=%s\n", w_hash, r_hash)
+        } else {
+            trace("[TESTER] [FAIL] write_hash=%s, read_hash=%s\n", w_hash, r_hash)
+        }
+    }
+}
+
 func generate_random_bytes(sz int) (buf []byte) {
     b := make([]byte, sz)
     _, err := rand.Read(b)
     chk_err(err)
     return b
+}
+
+func compute_sha1(payload []byte) (hash string) {
+    var buf []byte = make([]byte, len(payload))
+    copy(buf, payload)
+    h := sha1.New()
+    h.Write(buf)
+    bs := h.Sum(nil)
+    return fmt.Sprintf("%x", bs)
 }
 
 // ---------------------------------
