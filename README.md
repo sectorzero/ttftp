@@ -1,3 +1,7 @@
+Note :
+-----
+This is my first Go program I wrote by learning the language and trying to build a robust working server.
+
 System Description And Requirements
 -----------------------------------
 - A minimal TFTP server to be built which follows the protocol defined in RFC
